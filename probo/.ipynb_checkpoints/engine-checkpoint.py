@@ -3,6 +3,7 @@ import enum
 import numpy as np
 from scipy.stats import binom
 from scipy.stats import norm
+from scipy.stats.mstats import gmean
 
 
 class PricingEngine(object, metaclass=abc.ABCMeta):
@@ -41,9 +42,9 @@ def EuropeanBinomialPricer(pricing_engine, option, data):
     steps = pricing_engine.steps
     nodes = steps + 1
     dt = expiry / steps 
-    u = np.exp((rate * dt) + volatility * np.sqrt(dt)) 
-    d = np.exp((rate * dt) - volatility * np.sqrt(dt))
-    pu = (np.exp(rate * dt) - d) / (u - d)
+    u = np.exp(((rate - dividend) * dt) + volatility * np.sqrt(dt)) 
+    d = np.exp(((rate - dividend) * dt) - volatility * np.sqrt(dt))
+    pu = (np.exp((rate - dividend) * dt) - d) / (u - d)
     pd = 1 - pu
     disc = np.exp(-rate * expiry)
     spotT = 0.0
@@ -64,9 +65,9 @@ def AmericanBinomialPricer(pricingengine, option, data):
     steps = pricingengine.steps
     nodes = steps + 1
     dt = expiry / steps 
-    u = np.exp((rate * dt) + volatility * np.sqrt(dt)) 
-    d = np.exp((rate * dt) - volatility * np.sqrt(dt))
-    pu = (np.exp(rate * dt) - d) / (u - d)
+    u = np.exp(((rate - dividend) * dt) + volatility * np.sqrt(dt)) 
+    d = np.exp(((rate - dividend) * dt) - volatility * np.sqrt(dt))
+    pu = (np.exp((rate - dividend) * dt) - d) / (u - d)
     pd = 1 - pu
     disc = np.exp(-rate * dt)
     dpu = disc * pu
@@ -136,6 +137,11 @@ def NaiveMonteCarloPricer(engine, option, data):
 
     return prc
 
+def PathwiseNaiveMonteCarloPricer(engine, option, data):
+    ## You gotta put the code here!
+    ## See my AssetPaths function from class
+    pass
+
 def AntitheticMonteCarloPricer(engine, option, data):
     expiry = option.expiry
     strike = option.strike
@@ -185,6 +191,56 @@ def ControlVariatePricer(engine, option, data):
     #stderr = cash_flow_t.std() / np.sqrt(engine.replications)
     return price
 
+
+def AsianControlVariatePricer(engine, option, data):
+    expiry = option.expiry
+    strike = option.strike
+    (spot, rate, volatility, dividend) = data.get_data()
+    dt = expiry / engine.time_steps
+    
+    for i in range(1, engine.time_steps + 1):   
+        nudt[i] = (rate - dividend - 0.5 * volatility * volatility) * (t[i] - t[i - 1])
+        sigsdt[i] = volatility * np.sqrt(t[i] - t[i-1])
+    
+    sum_CT = 0 
+    sum_CT2 = 0
+    A = 0
+    G = 0
+    
+    for j in range(1, int(engine.time_steps + 1)):
+      # Reset for each simulation
+        St_array = np.zeros(int(engine.time_steps + 1))
+        St_array[0] = spot
+            
+      # Random Draws (Reset Each j)
+        epsilon = np.zeros(int(engine.time_steps + 1))
+        epsilon = np.random.normal(size = int(engine.time_steps + 1))
+        epsilon[0] = 0
+
+        for k in range(1, int(engine.time_steps + 1)):        
+            St_array[k] = St_array[k-1] * np.exp(nudt[k] + sigsdt[k] + epsilon[k]
+        
+    # Need to make new array for gmean that is N long
+        St_array = St_array[1:int(engine.time_steps + 1)]
+
+    # Arithmetic Average
+        A = np.mean(St_array)
+    
+    # Geometric Average
+    # Must use gmean function to prevent buffer overflow
+        G = gmean(St_array)
+
+# Pass to Vanilla Payoff  
+    
+        CT = option.payoff(A) - option.payoff(G)
+        sum_CT = sum_CT + CT
+#        sum_CT2 = sum_CT2 + CT*CT
+    
+    portfolio_value = (sum_CT / engine.replications) * np.exp(-rate * expiry)
+#    SD = np.sqrt((sum_CT2 - (sum_CT * (sum_CT / M))) * (np.exp(-2 * rate * expiry)) / (M - 1))
+#    SE = SD / np.sqrt(M)
+    return portfolio_value
+                                                 
 #class BlackScholesPayoffType(enum.Enum):
 #    call = 1
 #    put = 2

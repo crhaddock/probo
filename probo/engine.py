@@ -3,6 +3,7 @@ import enum
 import numpy as np
 from scipy.stats import binom
 from scipy.stats import norm
+from scipy.stats.mstats import gmean
 
 
 class PricingEngine(object, metaclass=abc.ABCMeta):
@@ -136,6 +137,11 @@ def NaiveMonteCarloPricer(engine, option, data):
 
     return prc
 
+def PathwiseNaiveMonteCarloPricer(engine, option, data):
+    ## You gotta put the code here!
+    ## See my AssetPaths function from class
+    pass
+
 def AntitheticMonteCarloPricer(engine, option, data):
     expiry = option.expiry
     strike = option.strike
@@ -185,6 +191,7 @@ def ControlVariatePricer(engine, option, data):
     #stderr = cash_flow_t.std() / np.sqrt(engine.replications)
     return price
 
+                                                 
 #class BlackScholesPayoffType(enum.Enum):
 #    call = 1
 #    put = 2
@@ -226,3 +233,166 @@ def BlackScholesPricer(pricing_engine, option, data):
     #    print("You must supply either a call or a put option to the BlackScholes pricing engine!")
 
     return price 
+
+
+class AsianMonteCarloEngine(PricingEngine):
+    def __init__(self, replications, time_steps, pricer):
+        self.__replications = replications
+        self.__time_steps = time_steps
+        self.__pricer = pricer
+#        self.__payoff_type = payoff_type
+
+    @property
+    def replications(self):
+        return self.__replications
+
+    @replications.setter
+    def replications(self, new_replications):
+        self.__replications = new_replications
+
+    @property
+    def time_steps(self):
+        return self.__time_steps
+
+    @time_steps.setter
+    def time_steps(self, new_time_steps):
+        self.__time_steps = new_time_steps
+    
+    def calculate(self, option, data):
+        return self.__pricer(self, option, data)
+    
+#    @property
+#    def payoff_type(self):
+#        return self.__payoff_type
+#    @payoff_type.setter
+#    def payoff_steps(self, new_payoff_type):
+#        self.__payoff_type = new_payoff_type
+
+def blackScholesValueCall(spot, strike, rate, volatility, dividend, expiry):
+    d1 = (np.log(spot / strike) + (rate - dividend + 0.5 * volatility * volatility) * expiry) / (volatility * np.sqrt(expiry))
+    d2 = d1 - volatility * np.sqrt(expiry)
+    optionPrice = (spot * np.exp(-dividend * expiry) * norm.cdf(d1)) - (strike * np.exp(-rate * expiry)  * norm.cdf(d2))
+#    if payoff == "call":
+#        optionPrice = (spot * np.exp(-dividend * expiry) * norm.cdf(d1)) - (strike * np.exp(-rate * expiry) * norm.cdf(d2)) 
+#    elif payoff == "put":
+#        optionPrice = (strike * np.exp(-rate * expiry) * norm.cdf(-d2)) - (spot * np.exp(-dividend * expiry) * norm.cdf(-d1))
+#    else:
+#        raise ValueError("You must pass either a call or a put option.")
+    return optionPrice
+
+def blackScholesValuePut(spot, strike, rate, volatility, dividend, expiry):
+    d1 = (np.log(spot / strike) + (rate - dividend + 0.5 * volatility * volatility) * expiry) / (volatility * np.sqrt(expiry))
+    d2 = d1 - volatility * np.sqrt(expiry)
+    optionPrice = (strike * np.exp(-rate * expiry) * norm.cdf(-d2)) - (spot * np.exp(-dividend * expiry) * norm.cdf(-d1))
+    return optionPrice
+
+def geometricAsianCall(spot, strike, rate, volatility, dividend, expiry, N):
+    dt = expiry / N
+    nu = rate - dividend - 0.5 * volatility * volatility
+    a = N * (N+1) * (2.0 * N + 1.0) / 6.0
+    V = np.exp(-rate * expiry) * spot * np.exp(((N + 1.0) * nu / 2.0 + volatility * volatility * a / (2.0 * N * N)) * dt)
+    vavg = volatility * np.sqrt(a) / pow(N, 1.5)
+    optionPrice = blackScholesValueCall(V, strike, rate, vavg, dividend, expiry)
+    return optionPrice
+
+def geometricAsianPut(spot, strike, rate, volatility, dividend, expiry, N):
+    dt = expiry / N
+    nu = rate - dividend - 0.5 * volatility * volatility
+    a = N * (N+1) * (2.0 * N + 1.0) / 6.0
+    V = np.exp(-rate * expiry) * spot * np.exp(((N + 1.0) * nu / 2.0 + volatility * volatility * a / (2.0 * N * N)) * dt)
+    vavg = volatility * np.sqrt(a) / pow(N, 1.5)
+    optionPrice = blackScholesValuePut(V, strike, rate, vavg, dividend, expiry)
+    return optionPrice
+
+def AsianControlVariatePricerCall(engine, option, data):
+    expiry = option.expiry
+    strike = option.strike
+    (spot, rate, volatility, dividend) = data.get_data()
+    dt = expiry / engine.time_steps
+    
+    nudt = np.zeros(int(engine.time_steps + 1))
+    sigsdt = np.zeros(int(engine.time_steps + 1))
+    
+    for i in range(1, int(engine.time_steps + 1)):   
+        nudt[i] = (rate - dividend - 0.5 * volatility * volatility) * (dt)
+        sigsdt[i] = volatility * np.sqrt(dt)
+    
+    sum_CT = 0 
+    sum_CT2 = 0
+    
+    for j in range(1, engine.replications + 1):
+        St_array = np.zeros(int(engine.time_steps + 1))
+        St_array[0] = spot
+            
+      # Random Draws (Reset Each j)
+        epsilon = np.zeros(int(engine.time_steps + 1))
+        epsilon = np.random.normal(size = int(engine.time_steps + 1))
+        epsilon[0] = 0
+
+        for k in range(1, int(engine.time_steps + 1)):
+            St_array[k] = St_array[k-1] * np.exp(nudt[k] + sigsdt[k] * epsilon[k])
+        
+        #St_array = St_array[1:int(engine.time_steps + 1)]
+
+    # Arithmetic Average
+        A = np.mean(St_array)
+    
+    # Geometric Average
+    # Must use gmean function to prevent buffer overflow
+        G = gmean(St_array)
+
+# Pass to Vanilla Payoff  
+        CT = option.payoff(A) - option.payoff(G)
+        sum_CT = sum_CT + CT
+        sum_CT2 = sum_CT2 + CT*CT
+    
+    portfolio_value = (sum_CT / engine.replications) * np.exp(-rate * expiry)
+# SD and SE Not Currently being used    
+    SD = np.sqrt((sum_CT2 - (sum_CT * (sum_CT / engine.replications))) * (np.exp(-2 * rate * expiry)) / (engine.replications - 1))
+    SE = SD / np.sqrt(engine.replications)
+#    asianCall = geometricAsianCall(spot, strike, rate, volatility, dividend, expiry, engine.time_steps)
+    price = portfolio_value + geometricAsianCall(spot, strike, rate, volatility, dividend, expiry, engine.time_steps)
+    return (price,SE)
+
+def NaiveAsianCall(engine, option, data):
+    expiry = option.expiry
+    strike = option.strike
+    (spot, rate, volatility, dividend) = data.get_data()
+    dt = expiry / engine.time_steps
+    
+    nudt = np.zeros(int(engine.time_steps + 1))
+    sigsdt = np.zeros(int(engine.time_steps + 1))
+    
+    for i in range(1, int(engine.time_steps + 1)):   
+        nudt[i] = (rate - dividend - 0.5 * volatility * volatility) * (dt)
+        sigsdt[i] = volatility * np.sqrt(dt)
+    
+    sum_CT = 0 
+    sum_CT2 = 0
+    
+    for j in range(1, engine.replications + 1):
+        St_array = np.zeros(int(engine.time_steps + 1))
+        St_array[0] = spot
+            
+      # Random Draws (Reset Each j)
+        epsilon = np.zeros(int(engine.time_steps + 1))
+        epsilon = np.random.normal(size = int(engine.time_steps + 1))
+        epsilon[0] = 0
+
+        for k in range(1, int(engine.time_steps + 1)):
+            St_array[k] = St_array[k-1] * np.exp(nudt[k] + sigsdt[k] * epsilon[k])
+
+    # Arithmetic Average
+        A = np.mean(St_array)
+
+# Pass to Vanilla Payoff  
+        CT = option.payoff(A) 
+        sum_CT = sum_CT + CT
+        sum_CT2 = sum_CT2 + CT*CT
+    
+    price = (sum_CT / engine.replications) * np.exp(-rate * expiry)
+# SD and SE Not Currently being used    
+    SD = np.sqrt((sum_CT2 - (sum_CT * (sum_CT / engine.replications))) * (np.exp(-2 * rate * expiry)) / (engine.replications - 1))
+    SE = SD / np.sqrt(engine.replications)
+    return (price,SE)
+

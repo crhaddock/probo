@@ -1,6 +1,6 @@
 from probo.marketdata import MarketData
 from probo.payoff import VanillaPayoff, call_payoff, put_payoff
-from probo.engine import BinomialPricingEngine, AmericanBinomialPricer 
+from probo.engine import MonteCarloEngine, NaiveMonteCarloPricer 
 from probo.facade import OptionFacade
 
 ## Set up the market data
@@ -11,22 +11,25 @@ dividend = 0.0
 thedata = MarketData(rate, spot, volatility, dividend)
 
 ## Set up the option
-expiry = 1.0 
+expiry = 1.0
 strike = 40.0
 thecall = VanillaPayoff(expiry, strike, call_payoff)
 theput = VanillaPayoff(expiry, strike, put_payoff)
 
-## Set up the European Binomial pricer
-steps = 3 
-pricer = AmericanBinomialPricer
-binomengine = BinomialPricingEngine(steps, pricer) 
+## Set up Naive Monte Carlo
+nreps = 100000
+steps = 1
+pricer = NaiveMonteCarloPricer
+mcengine = MonteCarloEngine(nreps, steps, pricer)
 
 ## Calculate the price
-option1 = OptionFacade(thecall, binomengine, thedata)
+option1 = OptionFacade(thecall, mcengine, thedata)
 price1 = option1.price()
-print("The call price via American Binomial is: {0:.3f}".format(price1))
-option2 = OptionFacade(theput, binomengine, thedata)
+print("The call price via Naive Monte Carlo is: {0:.3f}".format(price1))
+
+option2 = OptionFacade(theput, mcengine, thedata)
 price2 = option2.price()
-print("The put price via American Binomial is: {0:.3f}".format(price2))
+print("The put price via Naive Monte Carlo is: {0:.3f}".format(price2))
+
 
 

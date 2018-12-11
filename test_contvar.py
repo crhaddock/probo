@@ -1,12 +1,12 @@
 from probo.marketdata import MarketData
 from probo.payoff import VanillaPayoff, call_payoff, put_payoff
-from probo.engine import MonteCarloEngine, NaiveMonteCarloPricer 
+from probo.engine import MonteCarloEngine, NaiveMonteCarloPricer, ControlVariatePricer
 from probo.facade import OptionFacade
 
 ## Set up the market data
 spot = 100.0
 rate = 0.06
-volatility = 0.2
+volatility = 0.20
 dividend = 0.03
 thedata = MarketData(rate, spot, volatility, dividend)
 
@@ -19,7 +19,7 @@ theput = VanillaPayoff(expiry, strike, put_payoff)
 ## Set up Naive Monte Carlo
 nreps = 10000
 steps = 10
-pricer = NaiveMonteCarloPricer
+pricer = ControlVariatePricer
 mcengine = MonteCarloEngine(nreps, steps, pricer)
 
 ## Calculate the price
